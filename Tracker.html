@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Трекер</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{background:#0d0d12;color:#e2ddd6;font-family:'DM Sans',system-ui,sans-serif;font-size:14px}
+  input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+  input,textarea,button{font-family:'DM Sans',system-ui,sans-serif}
+  ::-webkit-scrollbar{width:3px}
+  ::-webkit-scrollbar-track{background:#0d0d12}
+  ::-webkit-scrollbar-thumb{background:#1e1e28}
+  textarea{box-sizing:border-box}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const SK_DAYS     = "nt_days";
+const SK_MEASURES = "nt_measures";
+const SK_ANALYSES = "nt_analyses";
+const SK_WEIGHTS  = "nt_weights";
+
+const HABITS = [
+  { id: "sleep7",    label: "Сон 7+ ч",              icon: "😴" },
+  { id: "creatine",  label: "Креатин",                icon: "💊" },
+  { id: "magnesium", label: "Магний",                 icon: "🔵" },
+  { id: "noScroll",  label: "Без скроллинга до сна", icon: "📵" },
+  { id: "noAlcohol", label: "Без алкоголя",           icon: "🚫" },
+  { id: "noPorn",    label: "Без порно",              icon: "🔒" },
+];
+
+const FAST_CARBS = [
+  { v: 0, label: "Не ел",   color: "#4ade80", bg: "#052e16", border: "#166534" },
+  { v: 1, label: "Немного", color: "#eab308", bg: "#1a1200", border: "#854d0e" },
+  { v: 2, label: "Срыв",    color: "#f87171", bg: "#1a0000", border: "#991b1b" },
+];
+
+const MOOD = [
+  { v:1, l:"💀", label:"Разбит" },
+  { v:2, l:"😞", label:"Плохо" },
+  { v:3, l:"😐", label:"Нейтрально" },
+  { v:4, l:"😊", label:"Хорошо" },
+  { v:5, l:"🔥", label:"Огонь" },
+];
+
+const ERECTION = [
+  { v:0, l:"—", label:"Не было" },
+  { v:1, l:"▁", label:"Слабая" },
+  { v:2, l:"▄", label:"Средняя" },
+  { v:3, l:"█", label:"Максимум" },
+];
+
+const SLEEP_QUALITY = [
+  { v:1, label:"Плохой",     color:"#f87171", bg:"#1a0000", border:"#991b1b" },
+  { v:2, label:"Нормальный", color:"#eab308", bg:"#1a1200", border:"#854d0e" },
+  { v:3, label:"Отличный",   color:"#4ade80", bg:"#052e16", border:"#166534" },
+];
+
+const CRAVING = [
+  { v:1, label:"Слабая",  color:"#4ade80", bg:"#052e16", border:"#166534" },
+  { v:2, label:"Средняя", color:"#eab308", bg:"#1a1200", border:"#854d0e" },
+  { v:3, label:"Сильная", color:"#f87171", bg:"#1a0000", border:"#991b1b" },
+];
+
+const ANALYSIS_FIELDS = [
+  { key:"testosterone", label:"Тестостерон", unit:"нмоль/л", baseline:14.7, target:"25–30",   higher:true  },
+  { key:"prolactin",    label:"Пролактин",   unit:"мМЕ/л",   baseline:324,  target:"< 270",   higher:false },
+  { key:"shbg",         label:"ГСПГ",        unit:"нмоль/л", baseline:null, target:"средний", higher:null  },
+  { key:"estradiol",    label:"Эстрадиол",   unit:"пмоль/л", baseline:null, target:"средний", higher:null  },
+];
+
+const MEASURE_FIELDS = [
+  { key:"neck",      label:"Шея",    unit:"см" },
+  { key:"shoulders", label:"Плечи",  unit:"см" },
+  { key:"chest",     label:"Грудь",  unit:"см" },
+  { key:"bicep",     label:"Бицепс", unit:"см" },
+  { key:"waist",     label:"Талия",  unit:"см" },
+  { key:"hip",       label:"Бедро",  unit:"см" },
+  { key:"calf",      label:"Икра",   unit:"см" },
+];
+
+const PERIODS = [
+  { id:"30",  label:"30 дней" },
+  { id:"90",  label:"3 месяца" },
+  { id:"all", label:"Всё время" },
+];
+
+function toKey(date){ return date.toISOString().split("T")[0]; }
+function todayKey(){ return toKey(new Date()); }
+function parseKey(k){ const [y,m,d]=k.split("-"); return new Date(+y,+m-1,+d); }
+function load(key,def){ try{ const r=localStorage.getItem(key); return r?JSON.parse(r):def; }catch{ return def; } }
+function save(key,d){ try{ localStorage.setItem(key,JSON.stringify(d)); }catch{} }
+
+function getDaysRange(periodId, allData){
+  if(periodId==="all"){
+    const keys=Object.keys(allData).sort();
+    if(!keys.length) return [];
+    const start=parseKey(keys[0]);
+    const end=new Date();
+    const days=[];
+    for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)) days.push(toKey(new Date(d)));
+    return days;
+  }
+  const n=parseInt(periodId);
+  return Array.from({length:n},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(n-1-i)); return toKey(d); });
+}
+
+function getMonthKey(k){ return k.slice(0,7); }
+function getMonthLabel(mk){ const [y,m]=mk.split("-"); return new Date(+y,+m-1,1).toLocaleDateString("ru-RU",{month:"long",year:"numeric"}); }
+
+function getDayScore(day){
+  if(!day) return 0;
+  const positives=HABITS.filter(h=>day.habits?.[h.id]).length;
+  const noBadCarbs=(day.fastCarbs==null||day.fastCarbs===0)?1:0;
+  return positives+noBadCarbs;
+}
+
+function scoreColor(score,max){
+  const r=score/max;
+  if(r===0) return "#1c1c24";
+  if(r<0.35) return "#7f1d1d";
+  if(r<0.6)  return "#92400e";
+  if(r<0.8)  return "#166534";
+  return "#15803d";
+}
+
+function getWeekStart(){
+  const d=new Date();
+  const diff=(d.getDay()===0?-6:1-d.getDay());
+  d.setDate(d.getDate()+diff);
+  return toKey(d);
+}
+
+const S = {
+  app:    { minHeight:"100dvh", background:"#0d0d12", color:"#e2ddd6", maxWidth:430, margin:"0 auto", paddingBottom:80 },
+  nav:    { position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:430, background:"#0d0d12", borderTop:"1px solid #1e1e28", display:"flex", zIndex:100 },
+  navBtn: (a)=>({ flex:1, padding:"10px 4px", background:"none", border:"none", color:a?"#4ade80":"#4b5563", fontSize:10, display:"flex", flexDirection:"column", alignItems:"center", gap:3, cursor:"pointer" }),
+  card:   { background:"#13131a", border:"1px solid #1e1e28", borderRadius:12, padding:"14px 16px", marginBottom:10 },
+  lbl:    { fontSize:10, color:"#4b5563", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:10, display:"block" },
+  title:  { fontFamily:"'Bebas Neue',sans-serif", fontSize:28, color:"#4ade80", marginBottom:14, letterSpacing:"0.05em" },
+  input:  { width:"100%", background:"#0d0d12", border:"1px solid #1e1e28", borderRadius:8, color:"#e2ddd6", fontSize:13, padding:"10px 12px", outline:"none", colorScheme:"dark" },
+  saveBtn:{ width:"100%", background:"#052e16", border:"1px solid #166534", borderRadius:8, color:"#4ade80", fontSize:14, padding:12, cursor:"pointer" },
+};
+
+function PeriodSelector({value,onChange}){
+  return (
+    <div style={{display:"flex",background:"#13131a",borderRadius:8,padding:3,marginBottom:14}}>
+      {PERIODS.map(p=>(
+        <button key={p.id} onClick={()=>onChange(p.id)} style={{
+          flex:1,padding:"7px 4px",background:value===p.id?"#1e1e28":"none",
+          border:"none",borderRadius:6,color:value===p.id?"#4ade80":"#4b5563",
+          fontSize:12,cursor:"pointer",transition:"all 0.15s",
+        }}>{p.label}</button>
+      ))}
+    </div>
+  );
+}
+
+function TodayTab({data,setData}){
+  const key=todayKey();
+  const day=data[key]||{};
+  function set(patch){ const u={...data,[key]:{...day,...patch}}; setData(u); save(SK_DAYS,u); }
+  function toggleHabit(id){ set({habits:{...day.habits,[id]:!day.habits?.[id]}}); }
+
+  const weekStart=getWeekStart();
+  const weekWorkouts=Object.entries(data).filter(([k,v])=>k>=weekStart&&v?.habits?.workout).length;
+  const curMonth=todayKey().slice(0,7);
+  const monthWorkouts=Object.entries(data).filter(([k,v])=>k.startsWith(curMonth)&&v?.habits?.workout).length;
+  const todayWorkout=!!day.habits?.workout;
+  function toggleWorkout(){ set({habits:{...day.habits,workout:!todayWorkout}}); }
+
+  const maxScore=HABITS.length+1;
+  const score=getDayScore(day);
+  const pct=Math.round((score/maxScore)*100);
+
+  return (
+    <div style={{padding:"16px 14px 0"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div>
+          <div style={S.title}>СЕГОДНЯ</div>
+          <div style={{fontSize:12,color:"#4b5563",marginTop:-10}}>
+            {new Date().toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long"})}
+          </div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:pct>=80?"#4ade80":pct>=50?"#eab308":"#f87171"}}>{pct}%</div>
+          <div style={{fontSize:10,color:"#4b5563"}}>{score}/{maxScore}</div>
+        </div>
+      </div>
+
+      <div style={{...S.card,padding:"12px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:22}}>🏋️</span>
+            <div style={{fontSize:14,color:"#e2ddd6"}}>Тренировка сегодня</div>
+          </div>
+          <button onClick={toggleWorkout} style={{
+            padding:"8px 18px",borderRadius:8,
+            background:todayWorkout?"#052e16":"#0d0d12",
+            border:`1px solid ${todayWorkout?"#166534":"#1e1e28"}`,
+            color:todayWorkout?"#4ade80":"#6b7280",
+            fontSize:13,cursor:"pointer",transition:"all 0.12s",
+          }}>{todayWorkout?"✓ Была":"Отметить"}</button>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <div style={{flex:1,background:"#0d0d12",borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:"#4ade80"}}>{weekWorkouts}</div>
+            <div style={{fontSize:9,color:"#4b5563"}}>на этой неделе</div>
+          </div>
+          <div style={{flex:1,background:"#0d0d12",borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:"#4ade80"}}>{monthWorkouts}</div>
+            <div style={{fontSize:9,color:"#4b5563"}}>в {new Date().toLocaleDateString("ru-RU",{month:"long"})}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <span style={S.lbl}>Привычки</span>
+        {HABITS.map(h=>{
+          const done=!!day.habits?.[h.id];
+          return (
+            <button key={h.id} onClick={()=>toggleHabit(h.id)} style={{
+              display:"flex",alignItems:"center",gap:12,width:"100%",
+              background:done?"#052e16":"#0d0d12",
+              border:`1px solid ${done?"#166534":"#1e1e28"}`,
+              borderRadius:8,padding:"11px 12px",marginBottom:6,
+              color:done?"#4ade80":"#6b7280",
+              fontSize:14,cursor:"pointer",transition:"all 0.12s",textAlign:"left",
+            }}>
+              <span style={{fontSize:18,lineHeight:1}}>{h.icon}</span>
+              <span style={{flex:1}}>{h.label}</span>
+              <span style={{fontSize:18}}>{done?"✓":"○"}</span>
+            </button>
+          );
+        })}
+        <div style={{marginTop:10}}>
+          <span style={{...S.lbl,marginBottom:6}}>🍭 Быстрые углеводы</span>
+          <div style={{display:"flex",gap:6}}>
+            {FAST_CARBS.map(fc=>(
+              <button key={fc.v} onClick={()=>set({fastCarbs:fc.v})} style={{
+                flex:1,padding:"10px 4px",
+                background:day.fastCarbs===fc.v?fc.bg:"#0d0d12",
+                border:`1px solid ${day.fastCarbs===fc.v?fc.border:"#1e1e28"}`,
+                borderRadius:8,color:day.fastCarbs===fc.v?fc.color:"#4b5563",
+                fontSize:12,cursor:"pointer",transition:"all 0.12s",
+              }}>{fc.label}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <span style={S.lbl}>Сон</span>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+          <div>
+            <label style={{fontSize:11,color:"#4b5563",display:"block",marginBottom:4}}>Лёг</label>
+            <input type="time" value={day.sleepTime||""} onChange={e=>set({sleepTime:e.target.value})} style={S.input}/>
+          </div>
+          <div>
+            <label style={{fontSize:11,color:"#4b5563",display:"block",marginBottom:4}}>Встал</label>
+            <input type="time" value={day.wakeTime||""} onChange={e=>set({wakeTime:e.target.value})} style={S.input}/>
+          </div>
+        </div>
+        <span style={{...S.lbl,marginBottom:6}}>Качество сна</span>
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          {SLEEP_QUALITY.map(sq=>(
+            <button key={sq.v} onClick={()=>set({sleepQuality:sq.v})} style={{
+              flex:1,padding:"10px 4px",
+              background:day.sleepQuality===sq.v?sq.bg:"#0d0d12",
+              border:`1px solid ${day.sleepQuality===sq.v?sq.border:"#1e1e28"}`,
+              borderRadius:8,color:day.sleepQuality===sq.v?sq.color:"#4b5563",
+              fontSize:12,cursor:"pointer",transition:"all 0.12s",
+            }}>{sq.label}</button>
+          ))}
+        </div>
+        <span style={{...S.lbl,marginBottom:6}}>Ночные пробуждения</span>
+        <div style={{display:"flex",gap:6}}>
+          {[{v:false,label:"Не было",color:"#4ade80",bg:"#052e16",border:"#166534"},
+            {v:true, label:"Были",   color:"#f87171",bg:"#1a0000",border:"#991b1b"}].map(opt=>(
+            <button key={String(opt.v)} onClick={()=>set({nightWaking:opt.v})} style={{
+              flex:1,padding:"10px 4px",
+              background:day.nightWaking===opt.v?opt.bg:"#0d0d12",
+              border:`1px solid ${day.nightWaking===opt.v?opt.border:"#1e1e28"}`,
+              borderRadius:8,color:day.nightWaking===opt.v?opt.color:"#4b5563",
+              fontSize:13,cursor:"pointer",transition:"all 0.12s",
+            }}>{opt.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <span style={S.lbl}>Настроение</span>
+        <div style={{display:"flex",gap:6,marginBottom:14}}>
+          {MOOD.map(m=>(
+            <button key={m.v} onClick={()=>set({mood:m.v})} style={{
+              flex:1,padding:"10px 4px",
+              background:day.mood===m.v?"#1a2e1a":"#0d0d12",
+              border:`1px solid ${day.mood===m.v?"#4ade80":"#1e1e28"}`,
+              borderRadius:8,cursor:"pointer",
+              display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+            }}>
+              <span style={{fontSize:20}}>{m.l}</span>
+              <span style={{fontSize:8,color:day.mood===m.v?"#4ade80":"#374151"}}>{m.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <span style={S.lbl}>Энергия</span>
+        <div style={{display:"flex",gap:6,marginBottom:14}}>
+          {[1,2,3,4,5].map(n=>(
+            <button key={n} onClick={()=>set({energy:n})} style={{
+              flex:1,padding:"10px 4px",
+              background:day.energy===n?"#1a1a2e":"#0d0d12",
+              border:`1px solid ${day.energy===n?"#6366f1":"#1e1e28"}`,
+              borderRadius:8,color:day.energy===n?"#818cf8":"#4b5563",
+              fontFamily:"'Bebas Neue',sans-serif",fontSize:20,cursor:"pointer",
+            }}>{n}</button>
+          ))}
+        </div>
+
+        <span style={S.lbl}>Утренняя эрекция</span>
+        <div style={{display:"flex",gap:6,marginBottom:14}}>
+          {ERECTION.map(e=>(
+            <button key={e.v} onClick={()=>set({erection:e.v})} style={{
+              flex:1,padding:"10px 4px",
+              background:day.erection===e.v?"#1a1a1a":"#0d0d12",
+              border:`1px solid ${day.erection===e.v?"#9ca3af":"#1e1e28"}`,
+              borderRadius:8,cursor:"pointer",
+              display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+            }}>
+              <span style={{fontSize:18,color:day.erection===e.v?"#e2ddd6":"#374151"}}>{e.l}</span>
+              <span style={{fontSize:8,color:day.erection===e.v?"#9ca3af":"#374151"}}>{e.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <span style={S.lbl}>Тяга к сладкому</span>
+        <div style={{display:"flex",gap:6,marginBottom:14}}>
+          {CRAVING.map(c=>(
+            <button key={c.v} onClick={()=>set({craving:c.v})} style={{
+              flex:1,padding:"10px 4px",
+              background:day.craving===c.v?c.bg:"#0d0d12",
+              border:`1px solid ${day.craving===c.v?c.border:"#1e1e28"}`,
+              borderRadius:8,color:day.craving===c.v?c.color:"#4b5563",
+              fontSize:12,cursor:"pointer",transition:"all 0.12s",
+            }}>{c.label}</button>
+          ))}
+        </div>
+
+        <span style={S.lbl}>Тиннитус (звон в ушах)</span>
+        <div style={{display:"flex",gap:6}}>
+          {[{v:false,label:"Не было",color:"#4ade80",bg:"#052e16",border:"#166534"},
+            {v:true, label:"Был",    color:"#f87171",bg:"#1a0000",border:"#991b1b"}].map(opt=>(
+            <button key={String(opt.v)} onClick={()=>set({tinnitus:opt.v})} style={{
+              flex:1,padding:"10px 4px",
+              background:day.tinnitus===opt.v?opt.bg:"#0d0d12",
+              border:`1px solid ${day.tinnitus===opt.v?opt.border:"#1e1e28"}`,
+              borderRadius:8,color:day.tinnitus===opt.v?opt.color:"#4b5563",
+              fontSize:13,cursor:"pointer",transition:"all 0.12s",
+            }}>{opt.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <span style={S.lbl}>Заметки дня</span>
+        <textarea value={day.notes||""} onChange={e=>set({notes:e.target.value})}
+          placeholder="Как прошло, что заметил..."
+          style={{...S.input,resize:"none",minHeight:80}}/>
+      </div>
+    </div>
+  );
+}
+
+function CalendarTab({data}){
+  const today=todayKey();
+  const now=new Date();
+  const [viewYear,setViewYear]=React.useState(now.getFullYear());
+  const [viewMonth,setViewMonth]=React.useState(now.getMonth());
+  const [selected,setSelected]=React.useState(null);
+
+  const firstDay=new Date(viewYear,viewMonth,1);
+  const daysInMonth=new Date(viewYear,viewMonth+1,0).getDate();
+  const startDow=(firstDay.getDay()+6)%7;
+  const monthName=firstDay.toLocaleDateString("ru-RU",{month:"long",year:"numeric"});
+  const maxScore=HABITS.length+1;
+  const monthKey=`${viewYear}-${String(viewMonth+1).padStart(2,"0")}`;
+  const monthWorkouts=Object.entries(data).filter(([k,v])=>k.startsWith(monthKey)&&v?.habits?.workout).length;
+
+  function prev(){ if(viewMonth===0){setViewYear(y=>y-1);setViewMonth(11);}else setViewMonth(m=>m-1); setSelected(null); }
+  function next(){ if(viewMonth===11){setViewYear(y=>y+1);setViewMonth(0);}else setViewMonth(m=>m+1); setSelected(null); }
+
+  const selectedDay=selected?data[selected]:null;
+
+  return (
+    <div style={{padding:"16px 14px 0"}}>
+      <div style={S.title}>КАЛЕНДАРЬ</div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <button onClick={prev} style={{background:"none",border:"none",color:"#4b5563",fontSize:22,cursor:"pointer",padding:"4px 8px"}}>‹</button>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:14,textTransform:"capitalize"}}>{monthName}</div>
+          <div style={{fontSize:10,color:"#4ade80"}}>🏋️ {monthWorkouts} тренировок</div>
+        </div>
+        <button onClick={next} style={{background:"none",border:"none",color:"#4b5563",fontSize:22,cursor:"pointer",padding:"4px 8px"}}>›</button>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:3}}>
+        {["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].map(d=>(
+          <div key={d} style={{textAlign:"center",fontSize:10,color:"#374151",padding:"4px 0"}}>{d}</div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:12}}>
+        {Array.from({length:startDow}).map((_,i)=><div key={"e"+i}/>)}
+        {Array.from({length:daysInMonth}).map((_,i)=>{
+          const d=i+1;
+          const k=`${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+          const day=data[k];
+          const score=getDayScore(day);
+          const isToday=k===today;
+          const isSel=k===selected;
+          return (
+            <button key={k} onClick={()=>setSelected(isSel?null:k)} style={{
+              aspectRatio:"1",background:day?scoreColor(score,maxScore):"#13131a",
+              border:`1px solid ${isSel?"#4ade80":isToday?"#4b5563":"transparent"}`,
+              borderRadius:6,color:day?"#e2ddd6":"#374151",fontSize:11,
+              cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",
+            }}>
+              {d}
+              {day?.habits?.workout&&<span style={{position:"absolute",top:2,right:2,width:4,height:4,borderRadius:"50%",background:"#4ade80",display:"block"}}/>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        {[["#1c1c24","Пусто"],["#7f1d1d","Плохо"],["#92400e","Средне"],["#166534","Хорошо"],["#15803d","Отлично"]].map(([c,l])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
+            <div style={{width:10,height:10,borderRadius:2,background:c}}/>
+            <span style={{fontSize:10,color:"#4b5563"}}>{l}</span>
+          </div>
+        ))}
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <div style={{width:6,height:6,borderRadius:"50%",background:"#4ade80"}}/>
+          <span style={{fontSize:10,color:"#4b5563"}}>Тренировка</span>
+        </div>
+      </div>
+
+      {selected&&(
+        <div style={{...S.card,border:"1px solid #1e4620"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <span style={{color:"#4ade80",fontSize:14,fontWeight:600}}>
+              {parseKey(selected).toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long"})}
+            </span>
+            <span style={{fontSize:11,color:"#4b5563"}}>{getDayScore(selectedDay)}/{maxScore}</span>
+          </div>
+          {selectedDay?(
+            <>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
+                {selectedDay.habits?.workout&&<span style={{padding:"4px 8px",borderRadius:6,fontSize:11,background:"#052e16",color:"#4ade80",border:"1px solid #166534"}}>🏋️ Тренировка</span>}
+                {HABITS.map(h=>{
+                  const done=!!selectedDay.habits?.[h.id];
+                  return <span key={h.id} style={{padding:"4px 8px",borderRadius:6,fontSize:11,background:done?"#052e16":"#1a1a1a",color:done?"#4ade80":"#4b5563",border:`1px solid ${done?"#166534":"#1e1e28"}`}}>{h.icon} {h.label}</span>;
+                })}
+                {selectedDay.fastCarbs!=null&&(()=>{const fc=FAST_CARBS[selectedDay.fastCarbs];return <span style={{padding:"4px 8px",borderRadius:6,fontSize:11,background:fc.bg,color:fc.color,border:`1px solid ${fc.border}`}}>🍭 {fc.label}</span>;})()}
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                {selectedDay.mood!=null&&<div style={{background:"#0d0d12",borderRadius:8,padding:"7px 10px",textAlign:"center"}}><div style={{fontSize:18}}>{MOOD.find(m=>m.v===selectedDay.mood)?.l}</div><div style={{fontSize:9,color:"#4b5563"}}>настроение</div></div>}
+                {selectedDay.energy!=null&&<div style={{background:"#0d0d12",borderRadius:8,padding:"7px 10px",textAlign:"center"}}><div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:"#818cf8"}}>{selectedDay.energy}</div><div style={{fontSize:9,color:"#4b5563"}}>энергия</div></div>}
+                {selectedDay.erection!=null&&<div style={{background:"#0d0d12",borderRadius:8,padding:"7px 10px",textAlign:"center"}}><div style={{fontSize:18}}>{ERECTION.find(e=>e.v===selectedDay.erection)?.l}</div><div style={{fontSize:9,color:"#4b5563"}}>эрекция</div></div>}
+                {selectedDay.sleepQuality!=null&&<div style={{background:"#0d0d12",borderRadius:8,padding:"7px 10px",textAlign:"center"}}><div style={{fontSize:13,color:SLEEP_QUALITY.find(s=>s.v===selectedDay.sleepQuality)?.color}}>{SLEEP_QUALITY.find(s=>s.v===selectedDay.sleepQuality)?.label}</div><div style={{fontSize:9,color:"#4b5563"}}>сон</div></div>}
+                {selectedDay.tinnitus!=null&&<div style={{background:"#0d0d12",borderRadius:8,padding:"7px 10px",textAlign:"center"}}><div style={{fontSize:13,color:selectedDay.tinnitus?"#f87171":"#4ade80"}}>{selectedDay.tinnitus?"Был":"Нет"}</div><div style={{fontSize:9,color:"#4b5563"}}>тиннитус</div></div>}
+                {selectedDay.craving!=null&&<div style={{background:"#0d0d12",borderRadius:8,padding:"7px 10px",textAlign:"center"}}><div style={{fontSize:13,color:CRAVING.find(c=>c.v===selectedDay.craving)?.color}}>{CRAVING.find(c=>c.v===selectedDay.craving)?.label}</div><div style={{fontSize:9,color:"#4b5563"}}>тяга</div></div>}
+              </div>
+              {selectedDay.sleepTime&&selectedDay.wakeTime&&(
+                <div style={{background:"#0d0d12",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#9ca3af",marginBottom:8}}>
+                  😴 {selectedDay.sleepTime} → {selectedDay.wakeTime}
+                  {selectedDay.nightWaking!=null&&<span style={{marginLeft:8,color:selectedDay.nightWaking?"#f87171":"#4ade80"}}>{selectedDay.nightWaking?"· пробуждения были":"· без пробуждений"}</span>}
+                </div>
+              )}
+              {selectedDay.notes&&<div style={{background:"#0d0d12",borderRadius:8,padding:"10px 12px",fontSize:12,color:"#9ca3af",fontStyle:"italic"}}>"{selectedDay.notes}"</div>}
+            </>
+          ):(
+            <div style={{color:"#4b5563",fontSize:13,textAlign:"center",padding:"10px 0"}}>Нет данных за этот день</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatsTab({data}){
+  const [period,setPeriod]=React.useState("30");
+  const days=React.useMemo(()=>getDaysRange(period,data),[period,data]);
+  const filled=days.filter(k=>data[k]);
+  const totalDays=filled.length;
+  const maxScore=HABITS.length+1;
+
+  const streak=React.useMemo(()=>{
+    let s=0;
+    for(let i=0;i<365;i++){
+      const d=new Date(); d.setDate(d.getDate()-i);
+      const k=toKey(d);
+      const day=data[k];
+      if(day&&getDayScore(day)>=Math.floor(maxScore*0.7)) s++;
+      else break;
+    }
+    return s;
+  },[data]);
+
+  const workoutDays=days.filter(k=>data[k]?.habits?.workout).length;
+  const sryvy=days.filter(k=>data[k]?.fastCarbs===2).length;
+  const noCarbsPct=totalDays?Math.round((days.filter(k=>data[k]&&(data[k].fastCarbs==null||data[k].fastCarbs===0)).length/totalDays)*100):0;
+  const moodDays=days.filter(k=>data[k]?.mood!=null);
+  const avgMood=moodDays.length?(moodDays.reduce((s,k)=>s+data[k].mood,0)/moodDays.length).toFixed(1):null;
+  const erDays=days.filter(k=>data[k]?.erection!=null);
+  const avgEr=erDays.length?(erDays.reduce((s,k)=>s+data[k].erection,0)/erDays.length).toFixed(1):null;
+  const tinnitusCount=days.filter(k=>data[k]?.tinnitus===true).length;
+  const goodSleepCount=days.filter(k=>data[k]?.sleepQuality===3).length;
+  const habitStats=HABITS.map(h=>{ const count=days.filter(k=>data[k]?.habits?.[h.id]).length; return {...h,pct:totalDays?Math.round((count/totalDays)*100):0}; });
+
+  const workoutsByMonth=React.useMemo(()=>{
+    const map={};
+    Object.entries(data).forEach(([k,v])=>{ if(v?.habits?.workout){ const mk=getMonthKey(k); map[mk]=(map[mk]||0)+1; } });
+    return Object.entries(map).sort(([a],[b])=>a.localeCompare(b)).slice(-6);
+  },[data]);
+
+  const heatDays=React.useMemo(()=>Array.from({length:90},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(89-i)); return toKey(d); }),[]);
+
+  return (
+    <div style={{padding:"16px 14px 0"}}>
+      <div style={S.title}>СТАТИСТИКА</div>
+      <PeriodSelector value={period} onChange={setPeriod}/>
+      <div style={{fontSize:10,color:"#4b5563",marginBottom:14}}>{totalDays} дней с данными за выбранный период</div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+        {[{label:"Стрик",value:streak+"🔥",sub:"70%+ привычек"},{label:"Тренировок",value:workoutDays,sub:"за период"},{label:"Срывов",value:sryvy,sub:"по углеводам"}].map(s=>(
+          <div key={s.label} style={{...S.card,marginBottom:0,textAlign:"center",padding:"12px 8px"}}>
+            <div style={{fontSize:10,color:"#4b5563",marginBottom:4}}>{s.label}</div>
+            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:"#e2ddd6",lineHeight:1}}>{s.value}</div>
+            <div style={{fontSize:9,color:"#374151",marginTop:2}}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+        {[{label:"Настроение",value:avgMood?MOOD.find(m=>m.v===Math.round(+avgMood))?.l+" "+avgMood:"—",sub:"средн."},{label:"Эрекция",value:avgEr?avgEr+"/3":"—",sub:"средний балл"},{label:"Тиннитус",value:tinnitusCount,sub:"дней с симптомом"},{label:"Отл. сон",value:goodSleepCount,sub:"дней"}].map(s=>(
+          <div key={s.label} style={{...S.card,marginBottom:0,textAlign:"center",padding:"12px 8px"}}>
+            <div style={{fontSize:10,color:"#4b5563",marginBottom:4}}>{s.label}</div>
+            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:"#e2ddd6",lineHeight:1}}>{s.value}</div>
+            <div style={{fontSize:9,color:"#374151",marginTop:2}}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {workoutsByMonth.length>0&&(
+        <div style={S.card}>
+          <span style={S.lbl}>Тренировки по месяцам</span>
+          {workoutsByMonth.map(([mk,count])=>(
+            <div key={mk} style={{marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontSize:12,color:"#9ca3af",textTransform:"capitalize"}}>{getMonthLabel(mk)}</span>
+                <span style={{fontSize:13,fontWeight:600,color:"#4ade80"}}>{count}</span>
+              </div>
+              <div style={{height:4,background:"#1e1e28",borderRadius:3}}>
+                <div style={{height:"100%",width:`${Math.min((count/20)*100,100)}%`,background:"#4ade80",borderRadius:3}}/>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={S.card}>
+        <span style={S.lbl}>Привычки — выполнение</span>
+        {[...habitStats,{id:"noCarbs",label:"Без срывов (углеводы)",icon:"🍭",pct:noCarbsPct}].map(h=>(
+          <div key={h.id} style={{marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontSize:13,color:"#9ca3af"}}>{h.icon} {h.label}</span>
+              <span style={{fontSize:13,fontWeight:600,color:h.pct>=70?"#4ade80":h.pct>=40?"#eab308":"#f87171"}}>{h.pct}%</span>
+            </div>
+            <div style={{height:4,background:"#1e1e28",borderRadius:3}}>
+              <div style={{height:"100%",width:`${h.pct}%`,background:h.pct>=70?"#4ade80":h.pct>=40?"#eab308":"#f87171",borderRadius:3,transition:"width 0.4s"}}/>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={S.card}>
+        <span style={S.lbl}>Настроение</span>
+        <div style={{display:"flex",gap:2,alignItems:"flex-end",height:60}}>
+          {days.slice(-60).map(k=>{
+            const mood=data[k]?.mood;
+            const colors=["","#7f1d1d","#b45309","#854d0e","#166534","#15803d"];
+            return <div key={k} style={{flex:1}}><div style={{width:"100%",borderRadius:"2px 2px 0 0",height:mood?`${mood*12}px`:2,background:mood?colors[mood]:"#1e1e28",transition:"height 0.3s"}}/></div>;
+          })}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:9,color:"#374151"}}>
+          <span>{days.length?parseKey(days[Math.max(0,days.length-60)]).toLocaleDateString("ru-RU",{day:"numeric",month:"short"}):""}</span>
+          <span>сегодня</span>
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <span style={S.lbl}>Активность — 90 дней</span>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(15,1fr)",gap:3}}>
+          {heatDays.map(k=>(
+            <div key={k} style={{aspectRatio:"1",borderRadius:3,background:scoreColor(getDayScore(data[k]),maxScore),border:k===todayKey()?"1px solid #4ade80":"none",position:"relative"}}>
+              {data[k]?.habits?.workout&&<div style={{position:"absolute",top:1,right:1,width:3,height:3,borderRadius:"50%",background:"#4ade80"}}/>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DataTab(){
+  const todayStr=todayKey();
+  const [tab,setTab]=React.useState(0);
+  const [measures,setMeasures]=React.useState(()=>load(SK_MEASURES,[]));
+  const [analyses,setAnalyses]=React.useState(()=>load(SK_ANALYSES,[]));
+  const [weights,setWeights]=React.useState(()=>load(SK_WEIGHTS,[]));
+  const emptyM={date:todayStr,...Object.fromEntries(MEASURE_FIELDS.map(f=>[f.key,""]))};
+  const emptyA={date:todayStr,...Object.fromEntries(ANALYSIS_FIELDS.map(f=>[f.key,""]))};
+  const [mForm,setMForm]=React.useState(emptyM);
+  const [aForm,setAForm]=React.useState(emptyA);
+  const [wForm,setWForm]=React.useState({date:todayStr,value:""});
+
+  function saveMeasure(){ const n=[...measures,{...mForm}]; setMeasures(n); save(SK_MEASURES,n); setMForm(emptyM); }
+  function saveAnalysis(){ const n=[...analyses,{...aForm}]; setAnalyses(n); save(SK_ANALYSES,n); }
+  function saveWeight(){ if(!wForm.value) return; const n=[...weights,{...wForm}]; setWeights(n); save(SK_WEIGHTS,n); setWForm({date:todayStr,value:""}); }
+
+  const lastA=analyses.slice(-1)[0];
+
+  return (
+    <div style={{padding:"16px 14px 0"}}>
+      <div style={S.title}>ДАННЫЕ</div>
+      <div style={{display:"flex",background:"#13131a",borderRadius:8,padding:3,marginBottom:14}}>
+        {["Вес","Замеры","Анализы"].map((t,i)=>(
+          <button key={t} onClick={()=>setTab(i)} style={{flex:1,padding:"8px 4px",background:tab===i?"#1e1e28":"none",border:"none",borderRadius:6,color:tab===i?"#e2ddd6":"#4b5563",fontSize:13,cursor:"pointer"}}>{t}</button>
+        ))}
+      </div>
+
+      {tab===0&&(
+        <>
+          <div style={S.card}>
+            <span style={S.lbl}>Вес (раз в неделю)</span>
+            <div style={{marginBottom:8}}><label style={{fontSize:11,color:"#4b5563",display:"block",marginBottom:4}}>Дата</label><input type="date" value={wForm.date} onChange={e=>setWForm(f=>({...f,date:e.target.value}))} style={S.input}/></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#4b5563",display:"block",marginBottom:4}}>Вес (кг)</label><input type="number" step="0.1" placeholder="87.5" value={wForm.value} onChange={e=>setWForm(f=>({...f,value:e.target.value}))} style={S.input}/></div>
+            <button onClick={saveWeight} style={S.saveBtn}>Сохранить</button>
+          </div>
+          {weights.length>0&&<div style={S.card}><span style={S.lbl}>История</span>{weights.slice().reverse().map((w,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #1e1e28"}}><span style={{color:"#4b5563",fontSize:12}}>{w.date}</span><span style={{color:"#e2ddd6",fontWeight:600}}>{w.value} кг</span></div>)}</div>}
+        </>
+      )}
+
+      {tab===1&&(
+        <>
+          <div style={S.card}>
+            <span style={S.lbl}>Замеры тела (раз в месяц)</span>
+            <div style={{marginBottom:8}}><label style={{fontSize:11,color:"#4b5563",display:"block",marginBottom:4}}>Дата</label><input type="date" value={mForm.date} onChange={e=>setMForm(f=>({...f,date:e.target.value}))} style={S.input}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+              {MEASURE_FIELDS.map(f=>(
+                <div key={f.key}><label style={{fontSize:11,color:"#4b5563",display:"block",marginBottom:3}}>{f.label} ({f.unit})</label><input type="number" step="0.1" value={mForm[f.key]} onChange={e=>setMForm(fm=>({...fm,[f.key]:e.target.value}))} style={S.input}/></div>
+              ))}
+            </div>
+            <button onClick={saveMeasure} style={S.saveBtn}>Сохранить замеры</button>
+          </div>
+          {measures.length>0&&<div style={S.card}><span style={S.lbl}>История</span>{measures.slice().reverse().map((m,i)=><div key={i} style={{padding:"10px 0",borderBottom:"1px solid #1e1e28"}}><div style={{color:"#4ade80",fontSize:12,marginBottom:6}}>{m.date}</div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{MEASURE_FIELDS.filter(f=>m[f.key]).map(f=><span key={f.key} style={{background:"#1e1e28",borderRadius:6,padding:"3px 8px",fontSize:11,color:"#9ca3af"}}>{f.label}: <span style={{color:"#e2ddd6"}}>{m[f.key]}</span></span>)}</div></div>)}</div>}
+        </>
+      )}
+
+      {tab===2&&(
+        <>
+          <div style={S.card}>
+            <span style={S.lbl}>Базовые (27.01.2026)</span>
+            {ANALYSIS_FIELDS.map(f=>{
+              const current=lastA?.[f.key]?parseFloat(lastA[f.key]):f.baseline;
+              const isGood=current!=null&&f.higher!=null?(f.higher?current>f.baseline:current<f.baseline):null;
+              return (
+                <div key={f.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1e1e28"}}>
+                  <div><div style={{fontSize:13,color:"#9ca3af"}}>{f.label}</div><div style={{fontSize:10,color:"#374151"}}>цель: {f.target}</div></div>
+                  <div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:600,color:isGood===true?"#4ade80":isGood===false?"#f87171":"#e2ddd6"}}>{current??"—"}</div><div style={{fontSize:10,color:"#374151"}}>{f.unit}</div></div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={S.card}>
+            <span style={S.lbl}>Добавить анализы</span>
+            <div style={{marginBottom:8}}><label style={{fontSize:11,color:"#4b5563",display:"block",marginBottom:4}}>Дата</label><input type="date" value={aForm.date} onChange={e=>setAForm(f=>({...f,date:e.target.value}))} style={S.input}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+              {ANALYSIS_FIELDS.map(f=><div key={f.key}><label style={{fontSize:10,color:"#4b5563",display:"block",marginBottom:3}}>{f.label} ({f.unit})</label><input type="number" step="0.01" value={aForm[f.key]} onChange={e=>setAForm(fm=>({...fm,[f.key]:e.target.value}))} style={S.input}/></div>)}
+            </div>
+            <button onClick={saveAnalysis} style={S.saveBtn}>Сохранить анализы</button>
+          </div>
+          {analyses.length>0&&<div style={S.card}><span style={S.lbl}>История анализов</span>{analyses.slice().reverse().map((a,i)=><div key={i} style={{padding:"10px 0",borderBottom:"1px solid #1e1e28"}}><div style={{color:"#4ade80",fontSize:12,marginBottom:6}}>{a.date}</div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{ANALYSIS_FIELDS.filter(f=>a[f.key]).map(f=><span key={f.key} style={{background:"#1e1e28",borderRadius:6,padding:"3px 8px",fontSize:11,color:"#9ca3af"}}>{f.label}: <span style={{color:"#e2ddd6"}}>{a[f.key]}</span></span>)}</div></div>)}</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+const NAV=[
+  {id:0,icon:"◉",label:"Сегодня"},
+  {id:1,icon:"▦",label:"Календарь"},
+  {id:2,icon:"↗",label:"Статистика"},
+  {id:3,icon:"≡",label:"Данные"},
+];
+
+function App(){
+  const [tab,setTab]=React.useState(0);
+  const [data,setData]=React.useState(()=>load(SK_DAYS,{}));
+
+  return (
+    <div style={S.app}>
+      {tab===0&&<TodayTab data={data} setData={setData}/>}
+      {tab===1&&<CalendarTab data={data}/>}
+      {tab===2&&<StatsTab data={data}/>}
+      {tab===3&&<DataTab/>}
+      <nav style={S.nav}>
+        {NAV.map(n=>(
+          <button key={n.id} onClick={()=>setTab(n.id)} style={S.navBtn(tab===n.id)}>
+            <span style={{fontSize:20}}>{n.icon}</span>
+            <span>{n.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

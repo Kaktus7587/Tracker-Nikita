@@ -143,6 +143,38 @@ function getWeekStart(){
   return toKey(d);
 }
 
+const DAILY_SCHEDULE = [
+  {
+    title:"День без тренировки",
+    items:[
+      ["9:20","Подъем: стакан воды, солнечный свет"],
+      ["9:30","Завтрак, креатин после завтрака"],
+      ["11:30","1 капсула магния"],
+      ["12:30","Перекус"],
+      ["14:30","Обед"],
+      ["17:30","Перекус"],
+      ["21:30","Ужин"],
+      ["23:30-01:30","2 капсулы магния за 30-60 минут до сна"],
+      ["00:00-02:00","Отход ко сну, минимум 7 часов"],
+    ],
+  },
+  {
+    title:"День с тренировкой",
+    items:[
+      ["7:00","Подъем: стакан воды, солнечный свет"],
+      ["7:10","Перекус"],
+      ["8:00-10:00","Тренировка"],
+      ["11:00","Завтрак, креатин после завтрака"],
+      ["13:00","1 капсула магния"],
+      ["15:00","Обед"],
+      ["18:00","Перекус"],
+      ["21:30","Ужин"],
+      ["23:30","2 капсулы магния за 30-60 минут до сна"],
+      ["00:00","Отход ко сну, минимум 7 часов"],
+    ],
+  },
+];
+
 const S = {
   app:    { minHeight:"100dvh", background:"#0d0d12", color:"#e2ddd6", maxWidth:430, margin:"0 auto", paddingBottom:80 },
   nav:    { position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:430, background:"#0d0d12", borderTop:"1px solid #1e1e28", display:"flex", zIndex:100 },
@@ -544,13 +576,6 @@ function StatsTab({data}){
   const tinnitusCount=days.filter(k=>data[k]?.tinnitus===true).length;
   const goodSleepCount=days.filter(k=>data[k]?.sleepQuality===3).length;
   const habitStats=HABITS.map(h=>{ const count=days.filter(k=>data[k]?.habits?.[h.id]).length; return {...h,pct:totalDays?Math.round((count/totalDays)*100):0}; });
-  const progressDays=days.slice(-30);
-  const progressPoints=progressDays.map((k,i)=>{
-    const x=progressDays.length<=1?0:(i/(progressDays.length-1))*100;
-    const score=getDayScore(data[k]);
-    const y=42-(score/maxScore)*36;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
 
   const workoutsByMonth=React.useMemo(()=>{
     const map={};
@@ -565,23 +590,6 @@ function StatsTab({data}){
       <div style={S.title}>СТАТИСТИКА</div>
       <PeriodSelector value={period} onChange={setPeriod}/>
       <div style={{fontSize:10,color:"#4b5563",marginBottom:14}}>{totalDays} дней с данными за выбранный период</div>
-
-      <div style={S.card}>
-        <span style={S.lbl}>График прогресса</span>
-        <svg viewBox="0 0 100 46" preserveAspectRatio="none" style={{width:"100%",height:94,display:"block"}}>
-          {[6,18,30,42].map(y=><line key={y} x1="0" y1={y} x2="100" y2={y} stroke="#1e1e28" strokeWidth="0.5"/>)}
-          <polyline points={progressPoints} fill="none" stroke="#4ade80" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
-          {progressDays.map((k,i)=>{
-            const x=progressDays.length<=1?0:(i/(progressDays.length-1))*100;
-            const y=42-(getDayScore(data[k])/maxScore)*36;
-            return <circle key={k} cx={x} cy={y} r="1.4" fill={data[k]?"#4ade80":"#374151"}/>;
-          })}
-        </svg>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#374151",marginTop:4}}>
-          <span>{progressDays.length?parseKey(progressDays[0]).toLocaleDateString("ru-RU",{day:"numeric",month:"short"}):""}</span>
-          <span>сегодня</span>
-        </div>
-      </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
         {[{label:"Стрик",value:streak+"🔥",sub:"70%+ привычек"},{label:"Тренировок",value:workoutDays,sub:"за период"},{label:"Срывов",value:sryvy,sub:"по углеводам"}].map(s=>(
@@ -659,6 +667,30 @@ function StatsTab({data}){
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleTab(){
+  return (
+    <div style={{padding:"16px 14px 0"}}>
+      <div style={S.title}>ГРАФИК</div>
+      <div style={S.card}>
+        <span style={S.lbl}>Прием БАДов, питание, тренировки и сон</span>
+        {DAILY_SCHEDULE.map(group=>(
+          <div key={group.title} style={{marginBottom:12}}>
+            <div style={{fontSize:14,color:"#e2ddd6",fontWeight:600,marginBottom:8}}>{group.title}</div>
+            <div style={{display:"grid",gap:5}}>
+              {group.items.map(([time,text])=>(
+                <div key={time+text} style={{display:"grid",gridTemplateColumns:"86px 1fr",gap:8,alignItems:"start",background:"#0d0d12",border:"1px solid #1e1e28",borderRadius:8,padding:"8px 10px"}}>
+                  <span style={{fontSize:12,color:"#4ade80",fontWeight:600}}>{time}</span>
+                  <span style={{fontSize:12,color:"#9ca3af",lineHeight:1.35}}>{text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -830,9 +862,10 @@ function DataTab({daysData,setDaysData}){
 
 const NAV=[
   {id:0,icon:"◉",label:"Сегодня"},
-  {id:1,icon:"▦",label:"Календарь"},
-  {id:2,icon:"↗",label:"Статистика"},
-  {id:3,icon:"≡",label:"Данные"},
+  {id:1,icon:"☰",label:"График"},
+  {id:2,icon:"▦",label:"Календарь"},
+  {id:3,icon:"↗",label:"Статистика"},
+  {id:4,icon:"≡",label:"Данные"},
 ];
 
 function App(){
@@ -842,9 +875,10 @@ function App(){
   return (
     <div style={S.app}>
       {tab===0&&<TodayTab data={data} setData={setData}/>}
-      {tab===1&&<CalendarTab data={data}/>}
-      {tab===2&&<StatsTab data={data}/>}
-      {tab===3&&<DataTab daysData={data} setDaysData={setData}/>}
+      {tab===1&&<ScheduleTab/>}
+      {tab===2&&<CalendarTab data={data}/>}
+      {tab===3&&<StatsTab data={data}/>}
+      {tab===4&&<DataTab daysData={data} setDaysData={setData}/>}
       <nav style={S.nav}>
         {NAV.map(n=>(
           <button key={n.id} onClick={()=>setTab(n.id)} style={S.navBtn(tab===n.id)}>
@@ -861,3 +895,4 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
+

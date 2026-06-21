@@ -98,6 +98,7 @@ const PERIODS = [
 
 function toKey(date){ return date.toISOString().split("T")[0]; }
 function todayKey(){ return toKey(new Date()); }
+function offsetKey(offset){ const d=new Date(); d.setDate(d.getDate()+offset); return toKey(d); }
 function parseKey(k){ const [y,m,d]=k.split("-"); return new Date(+y,+m-1,+d); }
 function load(key,def){ try{ const r=localStorage.getItem(key); return r?JSON.parse(r):def; }catch{ return def; } }
 function save(key,d){ try{ localStorage.setItem(key,JSON.stringify(d)); }catch{} }
@@ -168,10 +169,14 @@ function PeriodSelector({value,onChange}){
 }
 
 function TodayTab({data,setData}){
-  const key=todayKey();
+  const [dayOffset,setDayOffset]=React.useState(0);
+  const key=offsetKey(dayOffset);
   const day=data[key]||{};
   function set(patch){ const u={...data,[key]:{...day,...patch}}; setData(u); save(SK_DAYS,u); }
   function toggleHabit(id){ set({habits:{...day.habits,[id]:!day.habits?.[id]}}); }
+  const viewedDate=parseKey(key);
+  const dayTitle=dayOffset===0?"СЕГОДНЯ":"ВЧЕРА";
+  const dayWorkoutLabel=dayOffset===0?"Тренировка сегодня":"Тренировка вчера";
 
   const weekStart=getWeekStart();
   const weekWorkouts=Object.entries(data).filter(([k,v])=>k>=weekStart&&v?.habits?.workout).length;
@@ -188,9 +193,9 @@ function TodayTab({data,setData}){
     <div style={{padding:"16px 14px 0"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <div>
-          <div style={S.title}>СЕГОДНЯ</div>
+          <div style={S.title}>{dayTitle}</div>
           <div style={{fontSize:12,color:"#4b5563",marginTop:-10}}>
-            {new Date().toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long"})}
+            {viewedDate.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long"})}
           </div>
         </div>
         <div style={{textAlign:"center"}}>
@@ -199,11 +204,21 @@ function TodayTab({data,setData}){
         </div>
       </div>
 
+      <div style={{display:"flex",background:"#13131a",borderRadius:8,padding:3,marginBottom:14}}>
+        {[{label:"Вчера",offset:-1},{label:"Сегодня",offset:0}].map(opt=>(
+          <button key={opt.offset} onClick={()=>setDayOffset(opt.offset)} style={{
+            flex:1,padding:"8px 4px",background:dayOffset===opt.offset?"#1e1e28":"none",
+            border:"none",borderRadius:6,color:dayOffset===opt.offset?"#4ade80":"#4b5563",
+            fontSize:13,cursor:"pointer",
+          }}>{opt.label}</button>
+        ))}
+      </div>
+
       <div style={{...S.card,padding:"12px 16px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:22}}>🏋️</span>
-            <div style={{fontSize:14,color:"#e2ddd6"}}>Тренировка сегодня</div>
+            <div style={{fontSize:14,color:"#e2ddd6"}}>{dayWorkoutLabel}</div>
           </div>
           <button onClick={toggleWorkout} style={{
             padding:"8px 18px",borderRadius:8,
@@ -529,6 +544,13 @@ function StatsTab({data}){
   const tinnitusCount=days.filter(k=>data[k]?.tinnitus===true).length;
   const goodSleepCount=days.filter(k=>data[k]?.sleepQuality===3).length;
   const habitStats=HABITS.map(h=>{ const count=days.filter(k=>data[k]?.habits?.[h.id]).length; return {...h,pct:totalDays?Math.round((count/totalDays)*100):0}; });
+  const progressDays=days.slice(-30);
+  const progressPoints=progressDays.map((k,i)=>{
+    const x=progressDays.length<=1?0:(i/(progressDays.length-1))*100;
+    const score=getDayScore(data[k]);
+    const y=42-(score/maxScore)*36;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
 
   const workoutsByMonth=React.useMemo(()=>{
     const map={};
@@ -543,6 +565,23 @@ function StatsTab({data}){
       <div style={S.title}>СТАТИСТИКА</div>
       <PeriodSelector value={period} onChange={setPeriod}/>
       <div style={{fontSize:10,color:"#4b5563",marginBottom:14}}>{totalDays} дней с данными за выбранный период</div>
+
+      <div style={S.card}>
+        <span style={S.lbl}>График прогресса</span>
+        <svg viewBox="0 0 100 46" preserveAspectRatio="none" style={{width:"100%",height:94,display:"block"}}>
+          {[6,18,30,42].map(y=><line key={y} x1="0" y1={y} x2="100" y2={y} stroke="#1e1e28" strokeWidth="0.5"/>)}
+          <polyline points={progressPoints} fill="none" stroke="#4ade80" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+          {progressDays.map((k,i)=>{
+            const x=progressDays.length<=1?0:(i/(progressDays.length-1))*100;
+            const y=42-(getDayScore(data[k])/maxScore)*36;
+            return <circle key={k} cx={x} cy={y} r="1.4" fill={data[k]?"#4ade80":"#374151"}/>;
+          })}
+        </svg>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#374151",marginTop:4}}>
+          <span>{progressDays.length?parseKey(progressDays[0]).toLocaleDateString("ru-RU",{day:"numeric",month:"short"}):""}</span>
+          <span>сегодня</span>
+        </div>
+      </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
         {[{label:"Стрик",value:streak+"🔥",sub:"70%+ привычек"},{label:"Тренировок",value:workoutDays,sub:"за период"},{label:"Срывов",value:sryvy,sub:"по углеводам"}].map(s=>(
@@ -625,12 +664,36 @@ function StatsTab({data}){
   );
 }
 
-function DataTab(){
+function downloadFile(name,content,type){
+  const blob=new Blob([content],{type});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function normalizeBackup(raw){
+  const source=raw?.data||raw;
+  return {
+    days:source?.days&&typeof source.days==="object"?source.days:{},
+    weights:Array.isArray(source?.weights)?source.weights:[],
+    measures:Array.isArray(source?.measures)?source.measures:[],
+    analyses:Array.isArray(source?.analyses)?source.analyses:[],
+  };
+}
+
+function DataTab({daysData,setDaysData}){
   const todayStr=todayKey();
   const [tab,setTab]=React.useState(0);
   const [measures,setMeasures]=React.useState(()=>load(SK_MEASURES,[]));
   const [analyses,setAnalyses]=React.useState(()=>load(SK_ANALYSES,[]));
   const [weights,setWeights]=React.useState(()=>load(SK_WEIGHTS,[]));
+  const [backupStatus,setBackupStatus]=React.useState("");
+  const importRef=React.useRef(null);
   const emptyM={date:todayStr,...Object.fromEntries(MEASURE_FIELDS.map(f=>[f.key,""]))};
   const emptyA={date:todayStr,...Object.fromEntries(ANALYSIS_FIELDS.map(f=>[f.key,""]))};
   const [mForm,setMForm]=React.useState(emptyM);
@@ -641,11 +704,66 @@ function DataTab(){
   function saveAnalysis(){ const n=[...analyses,{...aForm}]; setAnalyses(n); save(SK_ANALYSES,n); }
   function saveWeight(){ if(!wForm.value) return; const n=[...weights,{...wForm}]; setWeights(n); save(SK_WEIGHTS,n); setWForm({date:todayStr,value:""}); }
 
+  function exportBackup(){
+    const payload={
+      backupVersion:1,
+      app:"tracker",
+      exportedAt:new Date().toISOString(),
+      data:{
+        days:daysData,
+        weights,
+        measures,
+        analyses,
+      },
+    };
+    downloadFile(`tracker-backup-${todayStr}.json`,JSON.stringify(payload,null,2),"application/json;charset=utf-8");
+    setBackupStatus("Бэкап скачан");
+  }
+
+  function importBackup(e){
+    const file=e.target.files?.[0];
+    if(!file) return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        const imported=normalizeBackup(JSON.parse(reader.result));
+        const ok=window.confirm("Заменить текущие данные данными из бэкапа? Перед импортом лучше скачать свежий бэкап.");
+        if(!ok) return;
+        setDaysData(imported.days);
+        setWeights(imported.weights);
+        setMeasures(imported.measures);
+        setAnalyses(imported.analyses);
+        save(SK_DAYS,imported.days);
+        save(SK_WEIGHTS,imported.weights);
+        save(SK_MEASURES,imported.measures);
+        save(SK_ANALYSES,imported.analyses);
+        setBackupStatus("Бэкап загружен");
+      }catch{
+        setBackupStatus("Не удалось прочитать файл");
+      }finally{
+        e.target.value="";
+      }
+    };
+    reader.readAsText(file);
+  }
+
   const lastA=analyses.slice(-1)[0];
 
   return (
     <div style={{padding:"16px 14px 0"}}>
       <div style={S.title}>ДАННЫЕ</div>
+      <div style={S.card}>
+        <span style={S.lbl}>Бэкап</span>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <button onClick={exportBackup} style={S.saveBtn}>Скачать бэкап</button>
+          <button onClick={()=>importRef.current?.click()} style={{...S.saveBtn,background:"#0d0d12",border:"1px solid #1e1e28",color:"#e2ddd6"}}>Загрузить бэкап</button>
+        </div>
+        <input ref={importRef} type="file" accept="application/json,.json" onChange={importBackup} style={{display:"none"}}/>
+        <div style={{fontSize:10,color:"#4b5563",marginTop:8}}>
+          Сохраняет все записи, заметки, вес, замеры и анализы.
+        </div>
+        {backupStatus&&<div style={{fontSize:11,color:"#4ade80",marginTop:8}}>{backupStatus}</div>}
+      </div>
       <div style={{display:"flex",background:"#13131a",borderRadius:8,padding:3,marginBottom:14}}>
         {["Вес","Замеры","Анализы"].map((t,i)=>(
           <button key={t} onClick={()=>setTab(i)} style={{flex:1,padding:"8px 4px",background:tab===i?"#1e1e28":"none",border:"none",borderRadius:6,color:tab===i?"#e2ddd6":"#4b5563",fontSize:13,cursor:"pointer"}}>{t}</button>
@@ -726,7 +844,7 @@ function App(){
       {tab===0&&<TodayTab data={data} setData={setData}/>}
       {tab===1&&<CalendarTab data={data}/>}
       {tab===2&&<StatsTab data={data}/>}
-      {tab===3&&<DataTab/>}
+      {tab===3&&<DataTab daysData={data} setDaysData={setData}/>}
       <nav style={S.nav}>
         {NAV.map(n=>(
           <button key={n.id} onClick={()=>setTab(n.id)} style={S.navBtn(tab===n.id)}>
